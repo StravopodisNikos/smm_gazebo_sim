@@ -4,55 +4,87 @@ import argparse
 import os
 import yaml
 
+from smm_gazebo_helpers import (
+    VALID_CONTROLLER_TYPES,
+    load_active_joint_names,
+    load_controller_defaults,
+    controller_plugin_type,
+    command_interface_name,
+    expand_to_dof,
+    make_test_q_des,
+)
 
-VALID_CONTROLLER_TYPES = ["position", "velocity", "effort"]
+def build_custom_controller_params(joint_names, controller_type, defaults):
+    n = len(joint_names)
 
-
-def load_active_joint_names(active_joint_names_yaml):
-    with open(active_joint_names_yaml, "r") as f:
-        data = yaml.safe_load(f)
-
-    if "active_joint_names" not in data:
+    if controller_type not in defaults:
         raise RuntimeError(
-            f"Missing key 'active_joint_names' in {active_joint_names_yaml}"
+            f"Missing defaults for controller '{controller_type}' in controller defaults YAML."
         )
 
-    joint_names = data["active_joint_names"]
+    cfg = defaults[controller_type]
 
-    if not isinstance(joint_names, list) or len(joint_names) == 0:
-        raise RuntimeError("'active_joint_names' must be a non-empty list.")
+    params = {
+        "joints": joint_names,
+    }
 
-    return joint_names
+    if "kp" in cfg:
+        params["kp"] = expand_to_dof(cfg["kp"], n, "kp")
+
+    if "kd" in cfg:
+        params["kd"] = expand_to_dof(cfg["kd"], n, "kd")
+
+    if "hold_initial_position" in cfg:
+        params["hold_initial_position"] = bool(cfg["hold_initial_position"])
+
+    if controller_type == "pd_gravity":
+        params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
+        params["gravity_representation"] = cfg.get("gravity_representation", "body")
+
+    elif controller_type == "joint_inverse_dynamics":
+        params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
+        params["dynamics_representation"] = cfg.get("dynamics_representation", "body")
+        params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
+
+        if "q_des" in cfg:
+            params["q_des"] = expand_to_dof(cfg["q_des"], n, "q_des")
+        else:
+            params["q_des"] = make_test_q_des(n, cfg)
+
+        if "qdot_des" in cfg:
+            params["qdot_des"] = expand_to_dof(cfg["qdot_des"], n, "qdot_des")
+        else:
+            params["qdot_des"] = [float(cfg.get("qdot_des_default_value", 0.0))] * n
+
+        if "qddot_des" in cfg:
+            params["qddot_des"] = expand_to_dof(cfg["qddot_des"], n, "qddot_des")
+        else:
+            params["qddot_des"] = [float(cfg.get("qddot_des_default_value", 0.0))] * n
+
+    return params
 
 
-def controller_plugin_type(controller_type):
-    if controller_type == "position":
-        return "position_controllers/JointGroupPositionController"
-
-    if controller_type == "velocity":
-        return "velocity_controllers/JointGroupVelocityController"
-
-    if controller_type == "effort":
-        return "effort_controllers/JointGroupEffortController"
-
-    raise RuntimeError(f"Unsupported controller type: {controller_type}")
-
-
-def command_interface_name(controller_type):
-    if controller_type == "position":
-        return "position"
-
-    if controller_type == "velocity":
-        return "velocity"
-
-    if controller_type == "effort":
-        return "effort"
-
-    raise RuntimeError(f"Unsupported controller type: {controller_type}")
-
-
-def write_controller_yaml(output_file, joint_names, controller_type, update_rate):
+def write_controller_yaml(
+    output_file,
+    joint_names,
+    controller_type,
+    update_rate,
+    controller_defaults_yaml,
+):
     command_interface = command_interface_name(controller_type)
+    defaults = load_controller_defaults(controller_defaults_yaml)
+
+    if controller_type in ["joint_pd_effort", "pd_gravity", "joint_inverse_dynamics"]:
+        controller_params = build_custom_controller_params(
+            joint_names=joint_names,
+            controller_type=controller_type,
+            defaults=defaults,
+        )
+    else:
+        controller_params = {
+            "joints": joint_names,
+            "command_interfaces": [command_interface],
+        }
 
     data = {
         "controller_manager": {
@@ -67,10 +99,7 @@ def write_controller_yaml(output_file, joint_names, controller_type, update_rate
             }
         },
         "smm_joint_controller": {
-            "ros__parameters": {
-                "joints": joint_names,
-                "command_interfaces": [command_interface],
-            }
+            "ros__parameters": controller_params
         },
     }
 
@@ -152,7 +181,7 @@ def main():
         "--controller-type",
         default="position",
         choices=VALID_CONTROLLER_TYPES,
-        help="Default joint controller type: position, velocity, or effort.",
+        help="Controller type.",
     )
 
     parser.add_argument(
@@ -160,6 +189,12 @@ def main():
         type=int,
         default=1000,
         help="controller_manager update rate in Hz.",
+    )
+
+    parser.add_argument(
+        "--controller-defaults-yaml",
+        required=True,
+        help="YAML file containing default parameters for SMM controllers.",
     )
 
     args = parser.parse_args()
@@ -174,6 +209,7 @@ def main():
         joint_names=joint_names,
         controller_type=args.controller_type,
         update_rate=args.update_rate,
+        controller_defaults_yaml=os.path.expanduser(args.controller_defaults_yaml),
     )
 
     write_gz_ros2_control_xacro(
@@ -186,6 +222,7 @@ def main():
     print(f"  controller type: {args.controller_type}")
     print(f"  control xacro:   {args.output_control_xacro}")
     print(f"  controller yaml: {args.output_controller_yaml}")
+    print(f"  defaults yaml:   {args.controller_defaults_yaml}")
     print("  joints:")
     for joint_name in joint_names:
         print(f"    - {joint_name}")
@@ -193,10 +230,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# How to test:
-# python3 scripts/generate_smm_gazebo_control_files.py \
-#--active-joint-names-yaml ~/ros2_ws/src/smm_class_pkgs/smm_data/synthesis/yaml/active_joint_names.yaml \
-#--output-control-xacro ~/ros2_ws/src/smm_class_pkgs/smm_data/synthesis/yaml/generated_gz_ros2_control.xacro \
-#--output-controller-yaml ~/ros2_ws/src/smm_class_pkgs/smm_data/synthesis/yaml/generated_smm_controllers.yaml \
-#--controller-type position

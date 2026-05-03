@@ -18,6 +18,7 @@ install(
 install(
   PROGRAMS
     scripts/generate_smm_gazebo_control_files.py
+    scripts/smm_gazebo_helpers.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

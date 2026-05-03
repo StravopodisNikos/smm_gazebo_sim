@@ -1,5 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction, OpaqueFunction, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction, OpaqueFunction, SetEnvironmentVariable, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -7,6 +8,7 @@ from ament_index_python.packages import get_package_share_directory
 
 import os
 import subprocess
+import yaml
 
 
 def launch_setup(context, *args, **kwargs):
@@ -19,18 +21,30 @@ def launch_setup(context, *args, **kwargs):
     robot_name = LaunchConfiguration("robot_name").perform(context)
     controller_type = LaunchConfiguration("controller_type").perform(context)
     data_dir = LaunchConfiguration("data_dir").perform(context)
-
+    start_rqt_plot = LaunchConfiguration("start_rqt_plot").perform(context).lower() == "true"
+    controller_defaults_yaml = LaunchConfiguration("controller_defaults_yaml").perform(context)
+    
     data_dir = os.path.expanduser(data_dir)
+    controller_defaults_yaml = os.path.expanduser(controller_defaults_yaml)
     os.makedirs(data_dir, exist_ok=True)
 
     active_joint_names_yaml = os.path.join(data_dir, "active_joint_names.yaml")
     generated_control_xacro = os.path.join(data_dir, "generated_gz_ros2_control.xacro")
     generated_controller_yaml = os.path.join(data_dir, "generated_smm_controllers.yaml")
 
-    if controller_type not in ["position", "velocity", "effort"]:
+    valid_controller_types = [
+        "position",
+        "velocity",
+        "effort",
+        "joint_pd_effort",
+        "pd_gravity",
+        "joint_inverse_dynamics",
+    ]
+
+    if controller_type not in valid_controller_types:
         raise RuntimeError(
             f"Invalid controller_type='{controller_type}'. "
-            "Allowed values: position, velocity, effort."
+            f"Allowed values: {', '.join(valid_controller_types)}."
         )
 
     if not os.path.exists(active_joint_names_yaml):
@@ -40,8 +54,20 @@ def launch_setup(context, *args, **kwargs):
             "Run master_synthesis_ndof.launch.py first."
         )
 
+    with open(active_joint_names_yaml, "r") as f:
+        active_joint_data = yaml.safe_load(f)
+
+    active_joint_names = active_joint_data.get("active_joint_names", [])
+
+    if not active_joint_names:
+        raise RuntimeError(
+            "[spawn_smm_gazebo_control] active_joint_names.yaml contains no active joints."
+        )
+
+    dof = len(active_joint_names)
+
     generator_script = os.path.join(
-        get_package_share_directory("smm_gazebo_sim"),
+        pkg_share,
         "..",
         "..",
         "lib",
@@ -49,6 +75,12 @@ def launch_setup(context, *args, **kwargs):
         "generate_smm_gazebo_control_files.py",
     )
     generator_script = os.path.abspath(generator_script)
+
+    if not os.path.exists(controller_defaults_yaml):
+        raise RuntimeError(
+        "[spawn_smm_gazebo_control] controller_defaults_yaml not found:\n"
+        f"  {controller_defaults_yaml}"
+    )
 
     subprocess.run(
         [
@@ -63,6 +95,8 @@ def launch_setup(context, *args, **kwargs):
             controller_type,
             "--update-rate",
             "1000",
+            "--controller-defaults-yaml",
+            controller_defaults_yaml,
         ],
         check=True,
     )
@@ -164,23 +198,48 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
+    smm_joint_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=[
+            "smm_joint_controller",
+            "--controller-manager",
+            "/controller_manager",
+        ],
+        output="screen",
+    )
+
     spawn_smm_joint_controller = TimerAction(
         period=9.0,
         actions=[
-            Node(
-                package="controller_manager",
-                executable="spawner",
-                arguments=[
-                    "smm_joint_controller",
-                    "--controller-manager",
-                    "/controller_manager",
-                ],
-                output="screen",
-            )
+            smm_joint_controller_spawner
         ],
     )
 
-    return [
+    position_error_topics = [
+        f"/smm_joint_controller/q_error_{i}/data"
+        for i in range(dof)
+    ]
+
+    rqt_plot_error_state = ExecuteProcess(
+        cmd=[
+            "ros2",
+            "run",
+            "rqt_plot",
+            "rqt_plot",
+            *position_error_topics,
+        ],
+        output="screen",
+    )
+
+    start_rqt_after_controller = RegisterEventHandler(
+        OnProcessExit(
+            target_action=smm_joint_controller_spawner,
+            on_exit=[rqt_plot_error_state],
+        )
+    )
+
+    actions = [
         set_gz_resource_path,
         set_gz_plugin_path,
         gz_sim,
@@ -189,6 +248,11 @@ def launch_setup(context, *args, **kwargs):
         spawn_joint_state_broadcaster,
         spawn_smm_joint_controller,
     ]
+
+    if start_rqt_plot and controller_type == "joint_inverse_dynamics":
+        actions.append(start_rqt_after_controller)
+
+    return actions
 
 
 def generate_launch_description():
@@ -233,8 +297,27 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "controller_type",
                 default_value="position",
-                description="Default joint controller type: position, velocity, or effort.",
+                description="Controller type: position, velocity, effort, joint_pd_effort, pd_gravity, joint_inverse_dynamics.",
+            ),
+            DeclareLaunchArgument(
+                "start_rqt_plot",
+                default_value="true",
+                description="Start rqt_plot automatically for N-DOF position error visualization.",
+            ),
+            DeclareLaunchArgument(
+                "controller_defaults_yaml",
+                default_value=os.path.join(
+                    get_package_share_directory("smm_controllers"),
+                    "config",
+                    "controller_defaults.yaml",
+                ),
+                description="YAML file containing default parameters for SMM controllers.",
             ),
             OpaqueFunction(function=launch_setup),
         ]
     )
+
+## How to run:
+#ros2 launch smm_gazebo_sim spawn_smm_gazebo_control.launch.py \
+#  controller_type:=joint_inverse_dynamics \
+#  controller_defaults_yaml:=/path/to/my_experiment_params.yaml
