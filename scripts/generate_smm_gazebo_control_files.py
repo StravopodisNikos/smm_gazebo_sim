@@ -14,6 +14,17 @@ from smm_gazebo_helpers import (
     make_test_q_des,
 )
 
+def expand_optional_vector(cfg, key, n, default=None):
+    value = cfg.get(key, default)
+
+    if value is None:
+        return None
+
+    if isinstance(value, list) and len(value) == 0:
+        return []
+
+    return expand_to_dof(value, n, key)
+
 def build_custom_controller_params(joint_names, controller_type, defaults):
     n = len(joint_names)
 
@@ -37,29 +48,53 @@ def build_custom_controller_params(joint_names, controller_type, defaults):
     if "hold_initial_position" in cfg:
         params["hold_initial_position"] = bool(cfg["hold_initial_position"])
 
-    if controller_type == "pd_gravity":
+    if controller_type == "joint_pd_effort":
+        params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
+
+        q_des_value = expand_optional_vector(cfg, "q_des", n, default=[])
+        if q_des_value:
+            params["q_des"] = q_des_value
+
+        qdot_des_value = expand_optional_vector(cfg, "qdot_des", n, default=[])
+        if qdot_des_value:
+            params["qdot_des"] = qdot_des_value
+
+    elif controller_type == "pd_gravity":
         params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
         params["gravity_representation"] = cfg.get("gravity_representation", "body")
+        params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
+
+        q_des_value = expand_optional_vector(cfg, "q_des", n, default=[])
+        if q_des_value:
+            params["q_des"] = q_des_value
+
+        qdot_des_value = expand_optional_vector(cfg, "qdot_des", n, default=[])
+        if qdot_des_value:
+            params["qdot_des"] = qdot_des_value
 
     elif controller_type == "joint_inverse_dynamics":
         params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
         params["dynamics_representation"] = cfg.get("dynamics_representation", "body")
         params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
-
-        if "q_des" in cfg:
-            params["q_des"] = expand_to_dof(cfg["q_des"], n, "q_des")
-        else:
+        params["trajectory_interpolation_mode"] = cfg.get("trajectory_interpolation_mode", "sync_cubic")
+        
+        q_des_value = expand_optional_vector(cfg, "q_des", n, default=None)
+        if q_des_value is None:
             params["q_des"] = make_test_q_des(n, cfg)
+        elif q_des_value:
+            params["q_des"] = q_des_value
 
-        if "qdot_des" in cfg:
-            params["qdot_des"] = expand_to_dof(cfg["qdot_des"], n, "qdot_des")
-        else:
+        qdot_des_value = expand_optional_vector(cfg, "qdot_des", n, default=None)
+        if qdot_des_value is None:
             params["qdot_des"] = [float(cfg.get("qdot_des_default_value", 0.0))] * n
+        elif qdot_des_value:
+            params["qdot_des"] = qdot_des_value
 
-        if "qddot_des" in cfg:
-            params["qddot_des"] = expand_to_dof(cfg["qddot_des"], n, "qddot_des")
-        else:
+        qddot_des_value = expand_optional_vector(cfg, "qddot_des", n, default=None)
+        if qddot_des_value is None:
             params["qddot_des"] = [float(cfg.get("qddot_des_default_value", 0.0))] * n
+        elif qddot_des_value:
+            params["qddot_des"] = qddot_des_value
 
     return params
 

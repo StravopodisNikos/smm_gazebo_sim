@@ -145,6 +145,16 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
     )
 
+    clock_bridge = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="clock_bridge",
+        arguments=[
+            "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"
+        ],
+        output="screen",
+    )
+    
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -243,6 +253,7 @@ def launch_setup(context, *args, **kwargs):
         set_gz_resource_path,
         set_gz_plugin_path,
         gz_sim,
+        clock_bridge,
         robot_state_publisher,
         spawn_robot,
         spawn_joint_state_broadcaster,
