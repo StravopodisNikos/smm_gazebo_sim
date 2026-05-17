@@ -1,5 +1,12 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction, OpaqueFunction, SetEnvironmentVariable, RegisterEventHandler
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    TimerAction,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+    RegisterEventHandler,
+)
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
@@ -9,6 +16,23 @@ from ament_index_python.packages import get_package_share_directory
 import os
 import subprocess
 import yaml
+
+
+def controller_runtime_name(controller_type):
+    """
+    Return the runtime controller node/name used by controller_manager.
+
+    Joint-space controllers are loaded as:
+      smm_joint_controller
+
+    Cartesian-space controllers are loaded as:
+      smm_cartesian_controller
+    """
+
+    if controller_type.startswith("cartesian_"):
+        return "smm_cartesian_controller"
+
+    return "smm_joint_controller"
 
 
 def launch_setup(context, *args, **kwargs):
@@ -23,7 +47,7 @@ def launch_setup(context, *args, **kwargs):
     data_dir = LaunchConfiguration("data_dir").perform(context)
     start_rqt_plot = LaunchConfiguration("start_rqt_plot").perform(context).lower() == "true"
     controller_defaults_yaml = LaunchConfiguration("controller_defaults_yaml").perform(context)
-    
+
     data_dir = os.path.expanduser(data_dir)
     controller_defaults_yaml = os.path.expanduser(controller_defaults_yaml)
     os.makedirs(data_dir, exist_ok=True)
@@ -39,6 +63,7 @@ def launch_setup(context, *args, **kwargs):
         "joint_pd_effort",
         "pd_gravity",
         "joint_inverse_dynamics",
+        "cartesian_pd_gravity",
     ]
 
     if controller_type not in valid_controller_types:
@@ -46,6 +71,8 @@ def launch_setup(context, *args, **kwargs):
             f"Invalid controller_type='{controller_type}'. "
             f"Allowed values: {', '.join(valid_controller_types)}."
         )
+
+    selected_controller_name = controller_runtime_name(controller_type)
 
     if not os.path.exists(active_joint_names_yaml):
         raise RuntimeError(
@@ -78,9 +105,9 @@ def launch_setup(context, *args, **kwargs):
 
     if not os.path.exists(controller_defaults_yaml):
         raise RuntimeError(
-        "[spawn_smm_gazebo_control] controller_defaults_yaml not found:\n"
-        f"  {controller_defaults_yaml}"
-    )
+            "[spawn_smm_gazebo_control] controller_defaults_yaml not found:\n"
+            f"  {controller_defaults_yaml}"
+        )
 
     subprocess.run(
         [
@@ -100,6 +127,10 @@ def launch_setup(context, *args, **kwargs):
         ],
         check=True,
     )
+
+    print("[spawn_smm_gazebo_control] Runtime controller selection:")
+    print(f"  controller_type: {controller_type}")
+    print(f"  controller_name: {selected_controller_name}")
 
     set_gz_resource_path = SetEnvironmentVariable(
         name="GZ_SIM_RESOURCE_PATH",
@@ -154,7 +185,7 @@ def launch_setup(context, *args, **kwargs):
         ],
         output="screen",
     )
-    
+
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -208,26 +239,27 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
-    smm_joint_controller_spawner = Node(
+    smm_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
+        name=f"spawner_{selected_controller_name}",
         arguments=[
-            "smm_joint_controller",
+            selected_controller_name,
             "--controller-manager",
             "/controller_manager",
         ],
         output="screen",
     )
 
-    spawn_smm_joint_controller = TimerAction(
+    spawn_smm_controller = TimerAction(
         period=9.0,
         actions=[
-            smm_joint_controller_spawner
+            smm_controller_spawner
         ],
     )
 
     position_error_topics = [
-        f"/smm_joint_controller/q_error_{i}/data"
+        f"/{selected_controller_name}/q_error_{i}/data"
         for i in range(dof)
     ]
 
@@ -244,7 +276,7 @@ def launch_setup(context, *args, **kwargs):
 
     start_rqt_after_controller = RegisterEventHandler(
         OnProcessExit(
-            target_action=smm_joint_controller_spawner,
+            target_action=smm_controller_spawner,
             on_exit=[rqt_plot_error_state],
         )
     )
@@ -257,10 +289,17 @@ def launch_setup(context, *args, **kwargs):
         robot_state_publisher,
         spawn_robot,
         spawn_joint_state_broadcaster,
-        spawn_smm_joint_controller,
+        spawn_smm_controller,
     ]
 
-    if start_rqt_plot and controller_type == "joint_inverse_dynamics":
+    # Joint-space q_error_i plotting is mainly useful for joint-space controllers.
+    # Cartesian controllers publish Cartesian error separately:
+    #   /smm_cartesian_controller/cartesian_error_state
+    if start_rqt_plot and controller_type in [
+        "joint_pd_effort",
+        "pd_gravity",
+        "joint_inverse_dynamics",
+    ]:
         actions.append(start_rqt_after_controller)
 
     return actions
@@ -303,17 +342,27 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "data_dir",
                 default_value=default_data_dir,
-                description="Directory containing active_joint_names.yaml and generated runtime control files.",
+                description=(
+                    "Directory containing active_joint_names.yaml and generated "
+                    "runtime control files."
+                ),
             ),
             DeclareLaunchArgument(
                 "controller_type",
                 default_value="position",
-                description="Controller type: position, velocity, effort, joint_pd_effort, pd_gravity, joint_inverse_dynamics.",
+                description=(
+                    "Controller type: position, velocity, effort, "
+                    "joint_pd_effort, pd_gravity, joint_inverse_dynamics, "
+                    "cartesian_pd_gravity."
+                ),
             ),
             DeclareLaunchArgument(
                 "start_rqt_plot",
                 default_value="true",
-                description="Start rqt_plot automatically for N-DOF position error visualization.",
+                description=(
+                    "Start rqt_plot automatically for joint-space q_error_i topics. "
+                    "Mainly intended for joint-space controllers."
+                ),
             ),
             DeclareLaunchArgument(
                 "controller_defaults_yaml",
@@ -328,7 +377,11 @@ def generate_launch_description():
         ]
     )
 
+
 ## How to run:
-#ros2 launch smm_gazebo_sim spawn_smm_gazebo_control.launch.py \
-#  controller_type:=joint_inverse_dynamics \
-#  controller_defaults_yaml:=/path/to/my_experiment_params.yaml
+# ros2 launch smm_gazebo_sim spawn_smm_gazebo_control.launch.py \
+#   controller_type:=joint_inverse_dynamics \
+#   controller_defaults_yaml:=/path/to/my_experiment_params.yaml
+#
+# ros2 launch smm_gazebo_sim spawn_smm_gazebo_control.launch.py \
+#   controller_type:=cartesian_pd_gravity

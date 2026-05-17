@@ -9,6 +9,7 @@ from smm_gazebo_helpers import (
     load_active_joint_names,
     load_controller_defaults,
     controller_plugin_type,
+    controller_runtime_name,
     command_interface_name,
     expand_to_dof,
     make_test_q_des,
@@ -47,6 +48,8 @@ def build_custom_controller_params(joint_names, controller_type, defaults):
 
     if "hold_initial_position" in cfg:
         params["hold_initial_position"] = bool(cfg["hold_initial_position"])
+
+    params["publish_desired_state"] = bool(cfg.get("publish_desired_state", True))
 
     if controller_type == "joint_pd_effort":
         params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
@@ -96,6 +99,42 @@ def build_custom_controller_params(joint_names, controller_type, defaults):
         elif qddot_des_value:
             params["qddot_des"] = qddot_des_value
 
+    elif controller_type == "cartesian_pd_gravity":
+        params["kinematics_data_dir"] = cfg["kinematics_data_dir"]
+        params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
+        params["gravity_representation"] = cfg.get("gravity_representation", "body")
+        params["fixed_frame"] = cfg.get("fixed_frame", "world")
+
+        params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
+        params["publish_desired_state"] = bool(cfg.get("publish_desired_state", True))
+        params["publish_current_state"] = bool(cfg.get("publish_current_state", True))
+
+        if "kp_cartesian" not in cfg:
+            raise RuntimeError("cartesian_pd_gravity requires 'kp_cartesian'.")
+
+        if "kd_cartesian" not in cfg:
+            raise RuntimeError("cartesian_pd_gravity requires 'kd_cartesian'.")
+
+        params["kp_cartesian"] = expand_to_dof(
+            cfg["kp_cartesian"],
+            3,
+            "kp_cartesian",
+        )
+
+        params["kd_cartesian"] = expand_to_dof(
+            cfg["kd_cartesian"],
+            3,
+            "kd_cartesian",
+        )
+
+        x_des_value = expand_optional_vector(cfg, "x_des", 3, default=[])
+        if x_des_value:
+            params["x_des"] = x_des_value
+
+        xdot_des_value = expand_optional_vector(cfg, "xdot_des", 3, default=[])
+        if xdot_des_value:
+            params["xdot_des"] = xdot_des_value
+
     return params
 
 
@@ -107,9 +146,15 @@ def write_controller_yaml(
     controller_defaults_yaml,
 ):
     command_interface = command_interface_name(controller_type)
+    controller_name = controller_runtime_name(controller_type)
     defaults = load_controller_defaults(controller_defaults_yaml)
 
-    if controller_type in ["joint_pd_effort", "pd_gravity", "joint_inverse_dynamics"]:
+    if controller_type in [
+        "joint_pd_effort",
+        "pd_gravity",
+        "joint_inverse_dynamics",
+        "cartesian_pd_gravity",
+    ]:
         controller_params = build_custom_controller_params(
             joint_names=joint_names,
             controller_type=controller_type,
@@ -128,18 +173,24 @@ def write_controller_yaml(
                 "joint_state_broadcaster": {
                     "type": "joint_state_broadcaster/JointStateBroadcaster"
                 },
-                "smm_joint_controller": {
+                controller_name: {
                     "type": controller_plugin_type(controller_type)
                 },
             }
         },
-        "smm_joint_controller": {
+        controller_name: {
             "ros__parameters": controller_params
         },
     }
 
     with open(output_file, "w") as f:
         yaml.safe_dump(data, f, sort_keys=False)
+
+    print("[write_controller_yaml] Controller YAML written:")
+    print(f"  output_file:      {output_file}")
+    print(f"  controller_type:  {controller_type}")
+    print(f"  controller_name:  {controller_name}")
+    print(f"  command_interface:{command_interface}")
 
 
 def write_gz_ros2_control_xacro(output_file, joint_names, controller_yaml):

@@ -11,6 +11,7 @@ VALID_CONTROLLER_TYPES = [
     "joint_pd_effort",
     "pd_gravity",
     "joint_inverse_dynamics",
+    "cartesian_pd_gravity",
 ]
 
 
@@ -75,22 +76,35 @@ def controller_plugin_type(controller_type):
         "joint_pd_effort": "smm_controllers/JointPDEffortController",
         "pd_gravity": "smm_controllers/PDGravityController",
         "joint_inverse_dynamics": "smm_controllers/InverseDynamicsJointController",
+        "cartesian_pd_gravity": "smm_controllers/CartesianPDGravityController",
     }
 
     validate_controller_type(controller_type)
     return plugin_map[controller_type]
 
+def controller_runtime_name(controller_type):
+    if controller_type.startswith("cartesian_"):
+        return "smm_cartesian_controller"
+
+    return "smm_joint_controller"
 
 def command_interface_name(controller_type):
-    validate_controller_type(controller_type)
-
     if controller_type == "position":
         return "position"
 
     if controller_type == "velocity":
         return "velocity"
 
-    return "effort"
+    if controller_type in [
+        "effort",
+        "joint_pd_effort",
+        "pd_gravity",
+        "joint_inverse_dynamics",
+        "cartesian_pd_gravity",
+    ]:
+        return "effort"
+
+    raise RuntimeError(f"Unsupported controller type: {controller_type}")
 
 
 def expand_to_dof(value, n, field_name):
