@@ -64,6 +64,9 @@ def launch_setup(context, *args, **kwargs):
         "pd_gravity",
         "joint_inverse_dynamics",
         "cartesian_pd_gravity",
+        "cartesian_pose_pd_gravity",
+        "cartesian_inv_dyn",
+        "cartesian_robust_inv_dyn",
     ]
 
     if controller_type not in valid_controller_types:

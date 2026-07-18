@@ -38,9 +38,16 @@ def generate_launch_description():
     /smm_cartesian_controller/desired_cartesian_state
     /smm_cartesian_controller/current_cartesian_state
     /smm_cartesian_controller/cartesian_error_state
+    /smm_cartesian_controller/jacobian_condition
+    /smm_cartesian_controller/jacobian_singular_values
+    /smm_cartesian_controller/jacobian_column_norms
 
     RViz Cartesian goal marker:
     /smm_viz/desired_cartesian_position_marker
+
+    RViz Jacobian condition marker:
+    /smm_viz/jacobian_condition_marker
+    /smm_viz/jacobian_condition_text
     """
 
     smm_gazebo_sim_share = get_package_share_directory("smm_gazebo_sim")
@@ -63,7 +70,8 @@ def generate_launch_description():
         default_value="joint_inverse_dynamics",
         description=(
             "Controller type: position, velocity, effort, joint_pd_effort, "
-            "pd_gravity, joint_inverse_dynamics, cartesian_pd_gravity."
+            "pd_gravity, joint_inverse_dynamics, cartesian_pd_gravity, "
+            "cartesian_pose_pd_gravity, cartesian_inv_dyn."
         ),
     )
 
@@ -89,6 +97,12 @@ def generate_launch_description():
         "start_desired_tcp_marker",
         default_value="true",
         description="Start desired TCP Cartesian position marker visualizer.",
+    )
+
+    start_jacobian_condition_marker_arg = DeclareLaunchArgument(
+        "start_jacobian_condition_marker",
+        default_value="true",
+        description="Start RViz marker node for Jacobian condition number visualization.",
     )
 
     gazebo_control = IncludeLaunchDescription(
@@ -133,6 +147,30 @@ def generate_launch_description():
         ],
     )
 
+    jacobian_condition_marker_node = Node(
+        condition=IfCondition(LaunchConfiguration("start_jacobian_condition_marker")),
+        package="smm_viz_tools",
+        executable="jacobian_condition_marker_node",
+        name="jacobian_condition_marker_node",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": True,
+                "condition_topic": "/smm_cartesian_controller/jacobian_condition",
+                "pose_topic": "/smm_cartesian_controller/current_cartesian_state",
+                "marker_topic": "/smm_viz/jacobian_condition_marker",
+                "text_topic": "/smm_viz/jacobian_condition_text",
+                "fixed_frame": "world",
+                "condition_good": 30.0,
+                "condition_bad": 1000.0,
+                "marker_scale": 0.045,
+                "text_scale": 0.055,
+                "z_offset": 0.10,
+                "publish_rate": 20.0,
+            }
+        ],
+    )
+
     return LaunchDescription(
         [
             controller_type_arg,
@@ -140,8 +178,11 @@ def generate_launch_description():
             start_rviz_arg,
             rviz_config_arg,
             start_desired_tcp_marker_arg,
+            start_jacobian_condition_marker_arg,
+
             gazebo_control,
             rviz,
             desired_tcp_marker_node,
+            jacobian_condition_marker_node,
         ]
     )

@@ -12,6 +12,9 @@ VALID_CONTROLLER_TYPES = [
     "pd_gravity",
     "joint_inverse_dynamics",
     "cartesian_pd_gravity",
+    "cartesian_pose_pd_gravity",
+    "cartesian_inv_dyn",
+    "cartesian_robust_inv_dyn",
 ]
 
 
@@ -77,6 +80,9 @@ def controller_plugin_type(controller_type):
         "pd_gravity": "smm_controllers/PDGravityController",
         "joint_inverse_dynamics": "smm_controllers/InverseDynamicsJointController",
         "cartesian_pd_gravity": "smm_controllers/CartesianPDGravityController",
+        "cartesian_pose_pd_gravity": "smm_controllers/CartesianPosePDGravityController",
+        "cartesian_inv_dyn": "smm_controllers/CartesianInvDynController",
+        "cartesian_robust_inv_dyn": "smm_controllers/CartesianRobustInvDynController",
     }
 
     validate_controller_type(controller_type)
@@ -101,6 +107,9 @@ def command_interface_name(controller_type):
         "pd_gravity",
         "joint_inverse_dynamics",
         "cartesian_pd_gravity",
+        "cartesian_pose_pd_gravity",
+        "cartesian_inv_dyn",
+        "cartesian_robust_inv_dyn",
     ]:
         return "effort"
 

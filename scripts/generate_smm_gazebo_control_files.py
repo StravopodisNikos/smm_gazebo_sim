@@ -128,12 +128,226 @@ def build_custom_controller_params(joint_names, controller_type, defaults):
         )
 
         x_des_value = expand_optional_vector(cfg, "x_des", 3, default=[])
-        if x_des_value:
+
+        if x_des_value is not None and len(x_des_value) > 0:
+            params["x_des"] = x_des_value
+
+        orientation_des_value = expand_optional_vector(cfg, "orientation_des", 4, default=[])
+
+        if orientation_des_value is not None and len(orientation_des_value) > 0:
+            params["orientation_des"] = orientation_des_value
+
+    elif controller_type == "cartesian_pose_pd_gravity":
+        params["kinematics_data_dir"] = cfg["kinematics_data_dir"]
+        params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
+        params["gravity_representation"] = cfg.get("gravity_representation", "body")
+        params["fixed_frame"] = cfg.get("fixed_frame", "world")
+
+        params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
+        params["publish_desired_state"] = bool(cfg.get("publish_desired_state", True))
+        params["publish_current_state"] = bool(cfg.get("publish_current_state", True))
+        params["publish_full_debug_state"] = bool(cfg.get("publish_full_debug_state", True))
+
+        params["kp_position"] = expand_to_dof(
+            cfg["kp_position"],
+            3,
+            "kp_position",
+        )
+
+        params["kd_position"] = expand_to_dof(
+            cfg["kd_position"],
+            3,
+            "kd_position",
+        )
+
+        params["kp_orientation"] = expand_to_dof(
+            cfg["kp_orientation"],
+            3,
+            "kp_orientation",
+        )
+
+        params["kd_orientation"] = expand_to_dof(
+            cfg["kd_orientation"],
+            3,
+            "kd_orientation",
+        )
+
+        x_des_value = expand_optional_vector(cfg, "x_des", 3, default=[])
+
+        if x_des_value is not None and len(x_des_value) > 0:
+            params["x_des"] = x_des_value
+
+        orientation_des_value = expand_optional_vector(cfg, "orientation_des", 4, default=[])
+
+        if orientation_des_value is not None and len(orientation_des_value) > 0:
+            params["orientation_des"] = orientation_des_value
+
+    elif controller_type == "cartesian_inv_dyn":
+        params["kinematics_data_dir"] = cfg["kinematics_data_dir"]
+        params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
+        params["gravity_representation"] = cfg.get("gravity_representation", "body")
+        params["fixed_frame"] = cfg.get("fixed_frame", "world")
+
+        params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
+        params["publish_desired_state"] = bool(cfg.get("publish_desired_state", True))
+        params["publish_current_state"] = bool(cfg.get("publish_current_state", True))
+        params["publish_full_debug_state"] = bool(cfg.get("publish_full_debug_state", True))
+
+        params["hold_initial_position"] = bool(cfg.get("hold_initial_position", True))
+
+        params["kp_position"] = expand_to_dof(cfg["kp_position"], 3, "kp_position")
+        params["kd_position"] = expand_to_dof(cfg["kd_position"], 3, "kd_position")
+        params["kp_orientation"] = expand_to_dof(cfg["kp_orientation"], 3, "kp_orientation")
+        params["kd_orientation"] = expand_to_dof(cfg["kd_orientation"], 3, "kd_orientation")
+
+        params["task_acceleration_scale"] = float(
+            cfg.get("task_acceleration_scale", 1.0)
+        )
+        params["condition_soft_limit"] = float(
+            cfg.get("condition_soft_limit", 500.0)
+        )
+        params["condition_hard_limit"] = float(
+            cfg.get("condition_hard_limit", 2000.0)
+        )
+        params["orientation_condition_scaling"] = bool(
+            cfg.get("orientation_condition_scaling", True)
+        )
+
+        params["operational_dynamics_method"] = cfg.get(
+            "operational_dynamics_method",
+            "exact_with_damped_fallback",
+        )
+
+        params["operational_damping"] = float(
+            cfg.get("operational_damping", 0.001)
+        )
+
+        x_des_value = expand_optional_vector(cfg, "x_des", 3, default=[])
+        if x_des_value is not None and len(x_des_value) > 0:
             params["x_des"] = x_des_value
 
         xdot_des_value = expand_optional_vector(cfg, "xdot_des", 3, default=[])
-        if xdot_des_value:
+        if xdot_des_value is not None and len(xdot_des_value) > 0:
             params["xdot_des"] = xdot_des_value
+
+        orientation_des_value = expand_optional_vector(
+            cfg, "orientation_des", 4, default=[]
+        )
+        if orientation_des_value is not None and len(orientation_des_value) > 0:
+            params["orientation_des"] = orientation_des_value
+
+    elif controller_type == "cartesian_robust_inv_dyn":
+        params["kinematics_data_dir"] = cfg["kinematics_data_dir"]
+        params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
+        params["gravity_representation"] = cfg.get("gravity_representation", "body")
+        params["fixed_frame"] = cfg.get("fixed_frame", "world")
+
+        params["publish_error_state"] = bool(cfg.get("publish_error_state", True))
+        params["publish_desired_state"] = bool(cfg.get("publish_desired_state", True))
+        params["publish_current_state"] = bool(cfg.get("publish_current_state", True))
+        params["publish_full_debug_state"] = bool(cfg.get("publish_full_debug_state", True))
+
+        params["hold_initial_position"] = bool(cfg.get("hold_initial_position", True))
+
+        params["kp_position"] = expand_to_dof(cfg["kp_position"], 3, "kp_position")
+        params["kd_position"] = expand_to_dof(cfg["kd_position"], 3, "kd_position")
+
+        params["kp_orientation"] = expand_to_dof(
+            cfg["kp_orientation"],
+            3,
+            "kp_orientation",
+        )
+
+        params["kd_orientation"] = expand_to_dof(
+            cfg["kd_orientation"],
+            3,
+            "kd_orientation",
+        )
+
+        params["lambda_position"] = expand_to_dof(
+            cfg["lambda_position"],
+            3,
+            "lambda_position",
+        )
+
+        params["lambda_orientation"] = expand_to_dof(
+            cfg["lambda_orientation"],
+            3,
+            "lambda_orientation",
+        )
+
+        params["k1_position"] = expand_to_dof(
+            cfg["k1_position"],
+            3,
+            "k1_position",
+        )
+
+        params["k1_orientation"] = expand_to_dof(
+            cfg["k1_orientation"],
+            3,
+            "k1_orientation",
+        )
+
+        params["k2_position"] = expand_to_dof(
+            cfg["k2_position"],
+            3,
+            "k2_position",
+        )
+
+        params["k2_orientation"] = expand_to_dof(
+            cfg["k2_orientation"],
+            3,
+            "k2_orientation",
+        )
+
+        params["tanh_kappa"] = float(cfg.get("tanh_kappa", 5.0))
+
+        params["operational_dynamics_method"] = cfg.get(
+            "operational_dynamics_method",
+            "exact_with_damped_fallback",
+        )
+
+        params["operational_damping"] = float(
+            cfg.get("operational_damping", 0.05)
+        )
+
+        params["task_acceleration_scale"] = float(
+            cfg.get("task_acceleration_scale", 0.5)
+        )
+
+        params["condition_soft_limit"] = float(
+            cfg.get("condition_soft_limit", 500.0)
+        )
+
+        params["condition_hard_limit"] = float(
+            cfg.get("condition_hard_limit", 2000.0)
+        )
+
+        params["orientation_condition_scaling"] = bool(
+            cfg.get("orientation_condition_scaling", True)
+        )
+
+        params["effort_limit"] = float(
+            cfg.get("effort_limit", 80.0)
+        )
+
+        x_des_value = expand_optional_vector(cfg, "x_des", 3, default=[])
+        if x_des_value is not None and len(x_des_value) > 0:
+            params["x_des"] = x_des_value
+
+        xdot_des_value = expand_optional_vector(cfg, "xdot_des", 3, default=[])
+        if xdot_des_value is not None and len(xdot_des_value) > 0:
+            params["xdot_des"] = xdot_des_value
+
+        orientation_des_value = expand_optional_vector(
+            cfg,
+            "orientation_des",
+            4,
+            default=[],
+        )
+
+        if orientation_des_value is not None and len(orientation_des_value) > 0:
+            params["orientation_des"] = orientation_des_value
 
     return params
 
@@ -154,6 +368,9 @@ def write_controller_yaml(
         "pd_gravity",
         "joint_inverse_dynamics",
         "cartesian_pd_gravity",
+        "cartesian_pose_pd_gravity",
+        "cartesian_inv_dyn",
+        "cartesian_robust_inv_dyn",
     ]:
         controller_params = build_custom_controller_params(
             joint_names=joint_names,
