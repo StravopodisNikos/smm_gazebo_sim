@@ -17,6 +17,8 @@ import os
 import subprocess
 import yaml
 
+def as_bool(value):
+    return str(value).strip().lower() in ["true", "1", "yes", "on"]
 
 def controller_runtime_name(controller_type):
     """
@@ -40,6 +42,7 @@ def launch_setup(context, *args, **kwargs):
     smm_synthesis_share = get_package_share_directory("smm_synthesis")
     smm_synthesis_parent = os.path.dirname(smm_synthesis_share)
 
+    run_synthesis = as_bool(LaunchConfiguration("run_synthesis").perform(context))
     world = LaunchConfiguration("world").perform(context)
     xacro_path = LaunchConfiguration("xacro_path").perform(context)
     robot_name = LaunchConfiguration("robot_name").perform(context)
@@ -51,6 +54,48 @@ def launch_setup(context, *args, **kwargs):
     data_dir = os.path.expanduser(data_dir)
     controller_defaults_yaml = os.path.expanduser(controller_defaults_yaml)
     os.makedirs(data_dir, exist_ok=True)
+
+    # Resolve xacro path for both synthesis and robot_description.
+    # >> Dont change position, it must appear before: "active_joint_names_yaml = os.path.join(data_dir, "active_joint_names.yaml")"
+    # Must sequence: run synthesis >> read active_joint_names.yaml >> generate ros2_control files >>  xacro robot_description >> Gazebo
+    xacro_path = os.path.expanduser(xacro_path)
+
+    if not os.path.isabs(xacro_path):
+        xacro_path_abs = os.path.join(smm_synthesis_share, xacro_path)
+    else:
+        xacro_path_abs = xacro_path
+
+    xacro_path_abs = os.path.abspath(xacro_path_abs)
+
+    if not os.path.exists(xacro_path_abs):
+        raise RuntimeError(
+            "[spawn_smm_gazebo_control] xacro_path not found:\n"
+            f"  input:    {xacro_path}\n"
+            f"  resolved: {xacro_path_abs}"
+        )
+
+    if run_synthesis:
+        print("[spawn_smm_gazebo_control] Running headless SMM synthesis first:")
+        print(f"  data_dir:   {data_dir}")
+        print(f"  xacro_path: {xacro_path_abs}")
+
+        subprocess.run(
+            [
+                "ros2",
+                "launch",
+                "smm_synthesis",
+                "master_synthesis_ndof.launch.py",
+                "headless:=true",
+                f"data_dir:={data_dir}",
+                f"xacro_path:={xacro_path_abs}",
+            ],
+            check=True,
+        )
+
+        print("[spawn_smm_gazebo_control] Headless synthesis finished.")
+    else:
+        print("[spawn_smm_gazebo_control] run_synthesis=false. Using existing synthesis YAML files.")
+    # << 
 
     active_joint_names_yaml = os.path.join(data_dir, "active_joint_names.yaml")
     generated_control_xacro = os.path.join(data_dir, "generated_gz_ros2_control.xacro")
@@ -158,7 +203,7 @@ def launch_setup(context, *args, **kwargs):
             [
                 "xacro",
                 " ",
-                xacro_path,
+                xacro_path_abs,
                 " ",
                 "use_gz_ros2_control:=true",
                 " ",
@@ -327,6 +372,14 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "run_synthesis",
+                default_value="true",
+                description=(
+                    "If true, run smm_synthesis/master_synthesis_ndof.launch.py in "
+                    "headless mode before generating ros2_control files and starting Gazebo."
+                ),
+            ),
             DeclareLaunchArgument(
                 "world",
                 default_value=default_world,

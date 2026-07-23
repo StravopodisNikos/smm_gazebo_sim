@@ -26,6 +26,39 @@ def expand_optional_vector(cfg, key, n, default=None):
 
     return expand_to_dof(value, n, key)
 
+def expand_joint_limit_vector(value, n, key):
+    if value is None:
+        return None
+
+    if isinstance(value, list):
+        if len(value) == 0:
+            return None
+
+        if len(value) == 1:
+            return [float(value[0])] * n
+
+        return expand_to_dof(value, n, key)
+
+    return [float(value)] * n
+
+def expand_first_rest_vector(value, n, key):
+    if value is None:
+        return None
+
+    if isinstance(value, list):
+        if len(value) == 0:
+            return None
+
+        if len(value) == 1:
+            return [float(value[0])] * n
+
+        if len(value) == 2:
+            return [float(value[0])] + [float(value[1])] * (n - 1)
+
+        return expand_to_dof(value, n, key)
+
+    return [float(value)] * n
+
 def build_custom_controller_params(joint_names, controller_type, defaults):
     n = len(joint_names)
 
@@ -213,6 +246,19 @@ def build_custom_controller_params(joint_names, controller_type, defaults):
             cfg.get("orientation_condition_scaling", True)
         )
 
+        params["effort_limit"] = float(
+            cfg.get("effort_limit", 80.0)
+        )
+
+        joint_effort_limits_value = expand_first_rest_vector(
+            cfg.get("joint_effort_limits", None),
+            n,
+            "joint_effort_limits",
+        )
+
+        if joint_effort_limits_value is not None:
+            params["joint_effort_limits"] = joint_effort_limits_value
+
         params["operational_dynamics_method"] = cfg.get(
             "operational_dynamics_method",
             "exact_with_damped_fallback",
@@ -221,6 +267,28 @@ def build_custom_controller_params(joint_names, controller_type, defaults):
         params["operational_damping"] = float(
             cfg.get("operational_damping", 0.001)
         )
+
+        params["enforce_velocity_limits"] = bool(
+            cfg.get("enforce_velocity_limits", True)
+        )
+        params["default_velocity_limit"] = float(
+            cfg.get("default_velocity_limit", 4.0841)
+        )
+        params["velocity_soft_margin"] = float(
+            cfg.get("velocity_soft_margin", 0.25)
+        )
+        params["velocity_brake_gain"] = float(
+            cfg.get("velocity_brake_gain", 15.0)
+        )
+
+        joint_velocity_limits_value = expand_joint_limit_vector(
+            cfg.get("joint_velocity_limits", None),
+            n,
+            "joint_velocity_limits",
+        )
+
+        if joint_velocity_limits_value is not None:
+            params["joint_velocity_limits"] = joint_velocity_limits_value
 
         x_des_value = expand_optional_vector(cfg, "x_des", 3, default=[])
         if x_des_value is not None and len(x_des_value) > 0:
@@ -330,6 +398,37 @@ def build_custom_controller_params(joint_names, controller_type, defaults):
         params["effort_limit"] = float(
             cfg.get("effort_limit", 80.0)
         )
+
+        joint_effort_limits_value = expand_first_rest_vector(
+            cfg.get("joint_effort_limits", None),
+            n,
+            "joint_effort_limits",
+        )
+
+        if joint_effort_limits_value is not None:
+            params["joint_effort_limits"] = joint_effort_limits_value
+
+        params["enforce_velocity_limits"] = bool(
+            cfg.get("enforce_velocity_limits", True)
+        )
+        params["default_velocity_limit"] = float(
+            cfg.get("default_velocity_limit", 4.0841)
+        )
+        params["velocity_soft_margin"] = float(
+            cfg.get("velocity_soft_margin", 0.25)
+        )
+        params["velocity_brake_gain"] = float(
+            cfg.get("velocity_brake_gain", 15.0)
+        )
+
+        joint_velocity_limits_value = expand_joint_limit_vector(
+            cfg.get("joint_velocity_limits", None),
+            n,
+            "joint_velocity_limits",
+        )
+
+        if joint_velocity_limits_value is not None:
+            params["joint_velocity_limits"] = joint_velocity_limits_value
 
         x_des_value = expand_optional_vector(cfg, "x_des", 3, default=[])
         if x_des_value is not None and len(x_des_value) > 0:
