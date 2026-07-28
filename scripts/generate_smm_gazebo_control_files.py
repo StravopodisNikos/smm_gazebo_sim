@@ -27,6 +27,17 @@ def expand_optional_vector(cfg, key, n, default=None):
     return expand_to_dof(value, n, key)
 
 def expand_joint_limit_vector(value, n, key):
+    """
+    Expands a joint-limit parameter to length n.
+
+    Accepted forms:
+      [] or None      -> omit the key
+      scalar          -> [scalar] * n
+      [scalar]        -> [scalar] * n
+      [v1, ..., vn]   -> unchanged after validation
+
+    This is mainly used for velocity limits.
+    """    
     if value is None:
         return None
 
@@ -42,6 +53,19 @@ def expand_joint_limit_vector(value, n, key):
     return [float(value)] * n
 
 def expand_first_rest_vector(value, n, key):
+    """
+    Expands a joint-limit parameter to length n.
+
+    Accepted forms:
+      [] or None        -> omit the key
+      scalar            -> [scalar] * n
+      [scalar]          -> [scalar] * n
+      [first, rest]     -> [first, rest, rest, ..., rest]
+      [v1, ..., vn]     -> unchanged after validation
+
+    This is mainly used for effort limits:
+      [80.0, 55.0] -> [80.0, 55.0, 55.0, ...]
+    """    
     if value is None:
         return None
 
@@ -58,6 +82,28 @@ def expand_first_rest_vector(value, n, key):
         return expand_to_dof(value, n, key)
 
     return [float(value)] * n
+
+def copy_if_present(params, cfg, key):
+    """
+    Copies a config key only when it exists and is not an empty list.
+
+    This prevents invalid YAML entries such as:
+      x_des:
+      orientation_des:
+      joint_velocity_limits:
+    """
+    if key not in cfg:
+        return
+
+    value = cfg[key]
+
+    if isinstance(value, list) and len(value) == 0:
+        return
+
+    if value is None:
+        return
+
+    params[key] = value
 
 def build_custom_controller_params(joint_names, controller_type, defaults):
     n = len(joint_names)
@@ -439,14 +485,455 @@ def build_custom_controller_params(joint_names, controller_type, defaults):
             params["xdot_des"] = xdot_des_value
 
         orientation_des_value = expand_optional_vector(
-            cfg,
-            "orientation_des",
-            4,
-            default=[],
+            cfg, "orientation_des", 4, default=[]
         )
-
         if orientation_des_value is not None and len(orientation_des_value) > 0:
             params["orientation_des"] = orientation_des_value
+
+    elif controller_type == "cartesian_robust_adaptive_inv_dyn":
+        n = len(joint_names)
+
+        params = {
+            "joints": joint_names,
+
+            # ---------------------------------------------------------------
+            # Operational acceleration reference:
+            # a_ref = scale * (Kp*e + Kd*e_dot)
+            # ---------------------------------------------------------------
+            "kp_position": expand_to_dof(
+                cfg["kp_position"],
+                3,
+                "kp_position",
+            ),
+            "kd_position": expand_to_dof(
+                cfg["kd_position"],
+                3,
+                "kd_position",
+            ),
+            "kp_orientation": expand_to_dof(
+                cfg["kp_orientation"],
+                3,
+                "kp_orientation",
+            ),
+            "kd_orientation": expand_to_dof(
+                cfg["kd_orientation"],
+                3,
+                "kd_orientation",
+            ),
+
+            # ---------------------------------------------------------------
+            # Robust/adaptive sliding variable:
+            # s = e_dot + Lambda*e
+            # ---------------------------------------------------------------
+            "lambda_position": expand_to_dof(
+                cfg["lambda_position"],
+                3,
+                "lambda_position",
+            ),
+            "lambda_orientation": expand_to_dof(
+                cfg["lambda_orientation"],
+                3,
+                "lambda_orientation",
+            ),
+
+            # ---------------------------------------------------------------
+            # Fixed robust RIDOSC term:
+            # F_rob = K1*s + K2*tanh(kappa*s)
+            # ---------------------------------------------------------------
+            "k1_position": expand_to_dof(
+                cfg["k1_position"],
+                3,
+                "k1_position",
+            ),
+            "k1_orientation": expand_to_dof(
+                cfg["k1_orientation"],
+                3,
+                "k1_orientation",
+            ),
+            "k2_position": expand_to_dof(
+                cfg["k2_position"],
+                3,
+                "k2_position",
+            ),
+            "k2_orientation": expand_to_dof(
+                cfg["k2_orientation"],
+                3,
+                "k2_orientation",
+            ),
+            "tanh_kappa": float(cfg.get("tanh_kappa", 5.0)),
+
+            # ---------------------------------------------------------------
+            # Adaptive robust term:
+            # rho_hat_dot = gamma*max(|s|-deadzone,0) - leakage*rho_hat
+            # F_ad = rho_hat*tanh(kappa*s)
+            # ---------------------------------------------------------------
+            "adaptive_enabled": bool(cfg.get("adaptive_enabled", False)),
+            "adaptive_gain_position": expand_to_dof(
+                cfg["adaptive_gain_position"],
+                3,
+                "adaptive_gain_position",
+            ),
+            "adaptive_gain_orientation": expand_to_dof(
+                cfg["adaptive_gain_orientation"],
+                3,
+                "adaptive_gain_orientation",
+            ),
+            "adaptive_leakage_position": expand_to_dof(
+                cfg["adaptive_leakage_position"],
+                3,
+                "adaptive_leakage_position",
+            ),
+            "adaptive_leakage_orientation": expand_to_dof(
+                cfg["adaptive_leakage_orientation"],
+                3,
+                "adaptive_leakage_orientation",
+            ),
+            "adaptive_rho_initial_position": expand_to_dof(
+                cfg["adaptive_rho_initial_position"],
+                3,
+                "adaptive_rho_initial_position",
+            ),
+            "adaptive_rho_initial_orientation": expand_to_dof(
+                cfg["adaptive_rho_initial_orientation"],
+                3,
+                "adaptive_rho_initial_orientation",
+            ),
+            "adaptive_rho_min_position": expand_to_dof(
+                cfg["adaptive_rho_min_position"],
+                3,
+                "adaptive_rho_min_position",
+            ),
+            "adaptive_rho_min_orientation": expand_to_dof(
+                cfg["adaptive_rho_min_orientation"],
+                3,
+                "adaptive_rho_min_orientation",
+            ),
+            "adaptive_rho_max_position": expand_to_dof(
+                cfg["adaptive_rho_max_position"],
+                3,
+                "adaptive_rho_max_position",
+            ),
+            "adaptive_rho_max_orientation": expand_to_dof(
+                cfg["adaptive_rho_max_orientation"],
+                3,
+                "adaptive_rho_max_orientation",
+            ),
+            "adaptive_deadzone": float(cfg.get("adaptive_deadzone", 0.001)),
+
+            # ---------------------------------------------------------------
+            # Reference handling
+            # ---------------------------------------------------------------
+            "hold_initial_position": bool(cfg.get("hold_initial_position", True)),
+
+            # ---------------------------------------------------------------
+            # Model data paths
+            # These are loaded from controller_defaults.yaml.
+            # Do not use data_dir here because build_custom_controller_params()
+            # does not receive data_dir.
+            # ---------------------------------------------------------------
+            "kinematics_data_dir": cfg["kinematics_data_dir"],
+            "dynamics_data_dir": cfg["dynamics_data_dir"],
+            "gravity_representation": cfg.get("gravity_representation", "body"),
+            "fixed_frame": cfg.get("fixed_frame", "world"),
+
+            # ---------------------------------------------------------------
+            # Operational-space dynamics
+            # ---------------------------------------------------------------
+            "operational_dynamics_method": cfg.get(
+                "operational_dynamics_method",
+                "exact_with_damped_fallback",
+            ),
+            "operational_damping": float(cfg.get("operational_damping", 0.05)),
+            "task_acceleration_scale": float(
+                cfg.get("task_acceleration_scale", 1.0)
+            ),
+
+            # ---------------------------------------------------------------
+            # Jacobian conditioning safety
+            # ---------------------------------------------------------------
+            "condition_soft_limit": float(cfg.get("condition_soft_limit", 500.0)),
+            "condition_hard_limit": float(cfg.get("condition_hard_limit", 2000.0)),
+            "orientation_condition_scaling": bool(
+                cfg.get("orientation_condition_scaling", False)
+            ),
+
+            # ---------------------------------------------------------------
+            # Effort and velocity safety
+            # ---------------------------------------------------------------
+            "effort_limit": float(cfg.get("effort_limit", 80.0)),
+            "enforce_velocity_limits": bool(
+                cfg.get("enforce_velocity_limits", True)
+            ),
+            "default_velocity_limit": float(
+                cfg.get("default_velocity_limit", 4.0841)
+            ),
+            "velocity_soft_margin": float(
+                cfg.get("velocity_soft_margin", 0.25)
+            ),
+            "velocity_brake_gain": float(
+                cfg.get("velocity_brake_gain", 15.0)
+            ),
+
+            # ---------------------------------------------------------------
+            # Debug publishing
+            # ---------------------------------------------------------------
+            "publish_error_state": bool(cfg.get("publish_error_state", True)),
+            "publish_desired_state": bool(cfg.get("publish_desired_state", True)),
+            "publish_current_state": bool(cfg.get("publish_current_state", True)),
+            "publish_full_debug_state": bool(
+                cfg.get("publish_full_debug_state", True)
+            ),
+        }
+
+        # Optional desired references.
+        # Empty lists are intentionally omitted to avoid invalid ROS 2 parameter YAML.
+        copy_if_present(params, cfg, "x_des")
+        copy_if_present(params, cfg, "xdot_des")
+        copy_if_present(params, cfg, "orientation_des")
+
+        # Per-joint effort limits.
+        # Example:
+        #   [80.0, 55.0] -> [80.0, 55.0, 55.0, ...]
+        joint_effort_limits_value = expand_first_rest_vector(
+            cfg.get("joint_effort_limits", None),
+            n,
+            "joint_effort_limits",
+        )
+
+        if joint_effort_limits_value is not None:
+            params["joint_effort_limits"] = joint_effort_limits_value
+
+        # Per-joint velocity limits.
+        # Example:
+        #   [4.0841] -> [4.0841, 4.0841, ...]
+        joint_velocity_limits_value = expand_joint_limit_vector(
+            cfg.get("joint_velocity_limits", None),
+            n,
+            "joint_velocity_limits",
+        )
+
+        if joint_velocity_limits_value is not None:
+            params["joint_velocity_limits"] = joint_velocity_limits_value
+
+    # Add impedance
+    elif controller_type == "cartesian_robust_impedance":
+        # Robust Impedance Controller, RIC.
+        # It inherits most RIDOSC infrastructure but replaces the acceleration
+        # reference with:
+        #
+        #   a_imp = M_imp^{-1}(D_imp * e_dot + K_imp * e)
+        #
+        # External TCP wrench is not included yet in this first version.
+
+        params["impedance_mass_position"] = expand_to_dof(
+            cfg["impedance_mass_position"],
+            3,
+            "impedance_mass_position",
+        )
+
+        params["impedance_damping_position"] = expand_to_dof(
+            cfg["impedance_damping_position"],
+            3,
+            "impedance_damping_position",
+        )
+
+        params["impedance_stiffness_position"] = expand_to_dof(
+            cfg["impedance_stiffness_position"],
+            3,
+            "impedance_stiffness_position",
+        )
+
+        params["impedance_mass_orientation"] = expand_to_dof(
+            cfg["impedance_mass_orientation"],
+            3,
+            "impedance_mass_orientation",
+        )
+
+        params["impedance_damping_orientation"] = expand_to_dof(
+            cfg["impedance_damping_orientation"],
+            3,
+            "impedance_damping_orientation",
+        )
+
+        params["impedance_stiffness_orientation"] = expand_to_dof(
+            cfg["impedance_stiffness_orientation"],
+            3,
+            "impedance_stiffness_orientation",
+        )
+
+        # Compatibility with copied RIDOSC parameter parser.
+        # RIC does not use kp/kd in the command law anymore, but the current
+        # C++ on_configure() still reads and validates them.
+        params["kp_position"] = expand_to_dof(
+            cfg["kp_position"],
+            3,
+            "kp_position",
+        )
+
+        params["kd_position"] = expand_to_dof(
+            cfg["kd_position"],
+            3,
+            "kd_position",
+        )
+
+        params["kp_orientation"] = expand_to_dof(
+            cfg["kp_orientation"],
+            3,
+            "kp_orientation",
+        )
+
+        params["kd_orientation"] = expand_to_dof(
+            cfg["kd_orientation"],
+            3,
+            "kd_orientation",
+        )
+
+        params["lambda_position"] = expand_to_dof(
+            cfg["lambda_position"],
+            3,
+            "lambda_position",
+        )
+
+        params["lambda_orientation"] = expand_to_dof(
+            cfg["lambda_orientation"],
+            3,
+            "lambda_orientation",
+        )
+
+        params["k1_position"] = expand_to_dof(
+            cfg["k1_position"],
+            3,
+            "k1_position",
+        )
+
+        params["k1_orientation"] = expand_to_dof(
+            cfg["k1_orientation"],
+            3,
+            "k1_orientation",
+        )
+
+        params["k2_position"] = expand_to_dof(
+            cfg["k2_position"],
+            3,
+            "k2_position",
+        )
+
+        params["k2_orientation"] = expand_to_dof(
+            cfg["k2_orientation"],
+            3,
+            "k2_orientation",
+        )
+
+        params["tanh_kappa"] = float(cfg["tanh_kappa"])
+
+        params["hold_initial_position"] = bool(cfg["hold_initial_position"])
+
+        params["use_external_wrench"] = bool(
+            cfg.get("use_external_wrench", True)
+        )
+
+        params["subtract_external_wrench_from_command"] = bool(
+            cfg.get("subtract_external_wrench_from_command", True)
+        )
+
+        params["require_external_wrench_frame_match"] = bool(
+            cfg.get("require_external_wrench_frame_match", True)
+        )
+
+        params["external_wrench_sign"] = float(
+            cfg.get("external_wrench_sign", 1.0)
+        )
+
+        params["external_wrench_timeout"] = float(
+            cfg.get("external_wrench_timeout", 0.2)
+        )
+
+        params["external_wrench_filter_alpha"] = float(
+            cfg.get("external_wrench_filter_alpha", 0.2)
+        )
+
+        params["external_wrench_deadband_force"] = float(
+            cfg.get("external_wrench_deadband_force", 0.2)
+        )
+
+        params["external_wrench_deadband_torque"] = float(
+            cfg.get("external_wrench_deadband_torque", 0.02)
+        )
+
+        params["external_wrench_limit_force"] = float(
+            cfg.get("external_wrench_limit_force", 80.0)
+        )
+
+        params["external_wrench_limit_torque"] = float(
+            cfg.get("external_wrench_limit_torque", 10.0)
+        )
+
+        params["desired_wrench_position"] = expand_to_dof(
+            cfg["desired_wrench_position"],
+            3,
+            "desired_wrench_position",
+        )
+
+        params["desired_wrench_orientation"] = expand_to_dof(
+            cfg["desired_wrench_orientation"],
+            3,
+            "desired_wrench_orientation",
+        )
+
+        # Optional desired Cartesian references.
+        # Do not emit null YAML fields.
+        copy_if_present(params, cfg, "x_des")
+        copy_if_present(params, cfg, "xdot_des")
+        copy_if_present(params, cfg, "orientation_des")
+
+        params["kinematics_data_dir"] = cfg["kinematics_data_dir"]
+        params["dynamics_data_dir"] = cfg["dynamics_data_dir"]
+
+        params["gravity_representation"] = cfg["gravity_representation"]
+        params["fixed_frame"] = cfg["fixed_frame"]
+
+        params["operational_dynamics_method"] = cfg["operational_dynamics_method"]
+        params["operational_damping"] = float(cfg["operational_damping"])
+
+        params["task_acceleration_scale"] = float(cfg["task_acceleration_scale"])
+
+        params["condition_soft_limit"] = float(cfg["condition_soft_limit"])
+        params["condition_hard_limit"] = float(cfg["condition_hard_limit"])
+        params["orientation_condition_scaling"] = bool(
+            cfg["orientation_condition_scaling"])
+
+        params["effort_limit"] = float(cfg["effort_limit"])
+
+        joint_effort_limits = expand_first_rest_vector(
+            cfg.get("joint_effort_limits"),
+            n,
+            "joint_effort_limits")
+        if joint_effort_limits is not None:
+            params["joint_effort_limits"] = joint_effort_limits
+
+        params["enforce_velocity_limits"] = bool(
+            cfg.get("enforce_velocity_limits", True))
+
+        params["default_velocity_limit"] = float(
+            cfg.get("default_velocity_limit", 4.0841))
+
+        params["velocity_soft_margin"] = float(
+            cfg.get("velocity_soft_margin", 0.25))
+
+        params["velocity_brake_gain"] = float(
+            cfg.get("velocity_brake_gain", 15.0))
+
+        joint_velocity_limits = expand_joint_limit_vector(
+            cfg.get("joint_velocity_limits"),
+            n,
+            "joint_velocity_limits")
+        if joint_velocity_limits is not None:
+            params["joint_velocity_limits"] = joint_velocity_limits
+
+        params["publish_error_state"] = bool(cfg["publish_error_state"])
+        params["publish_desired_state"] = bool(cfg["publish_desired_state"])
+        params["publish_current_state"] = bool(cfg["publish_current_state"])
+        params["publish_full_debug_state"] = bool(cfg["publish_full_debug_state"])
 
     return params
 
@@ -470,6 +957,8 @@ def write_controller_yaml(
         "cartesian_pose_pd_gravity",
         "cartesian_inv_dyn",
         "cartesian_robust_inv_dyn",
+        "cartesian_robust_adaptive_inv_dyn",
+        "cartesian_robust_impedance",
     ]:
         controller_params = build_custom_controller_params(
             joint_names=joint_names,

@@ -1,0 +1,197 @@
+<?xml version="1.0" ?>
+<sdf version="1.10">
+  <world name="smm_world">
+
+    <plugin
+      filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+
+    <plugin
+      filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+
+    <plugin
+      filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+
+    <plugin
+      filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+    </plugin>
+
+    <!-- Required for /world/smm_world/wrench and /wrench/persistent -->
+    <plugin
+      filename="gz-sim-apply-link-wrench-system"
+      name="gz::sim::systems::ApplyLinkWrench">
+    </plugin>
+
+    <gravity>0 0 -9.81</gravity>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>10 10</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>10 10</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.45 0.45 0.45 1</ambient>
+            <diffuse>0.55 0.55 0.55 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Simple massage table -->
+    <model name="massage_table">
+        <static>true</static>
+        <!-- shifted -1 m in world Y and rotated +90 deg around world Z -->
+        <pose>00 -0.40 0.28 0 0 0</pose>
+
+        <link name="top">
+            <collision name="collision">
+            <geometry>
+                <box>
+                <size>0.90 0.45 0.08</size>
+                </box>
+            </geometry>
+            </collision>
+            <visual name="visual">
+            <geometry>
+                <box>
+                <size>0.90 0.45 0.08</size>
+                </box>
+            </geometry>
+            <material>
+                <ambient>0.12 0.12 0.16 1</ambient>
+                <diffuse>0.18 0.18 0.24 1</diffuse>
+            </material>
+            </visual>
+        </link>
+
+        <link name="leg_1">
+            <pose>0.35 0.18 -0.18 0 0 0</pose>
+            <collision name="collision">
+            <geometry>
+                <box>
+                <size>0.04 0.04 0.36</size>
+                </box>
+            </geometry>
+            </collision>
+            <visual name="visual">
+            <geometry>
+                <box>
+                <size>0.04 0.04 0.36</size>
+                </box>
+            </geometry>
+            </visual>
+        </link>
+
+        <link name="leg_2">
+            <pose>-0.35 0.18 -0.18 0 0 0</pose>
+            <collision name="collision">
+            <geometry>
+                <box>
+                <size>0.04 0.04 0.36</size>
+                </box>
+            </geometry>
+            </collision>
+            <visual name="visual">
+            <geometry>
+                <box>
+                <size>0.04 0.04 0.36</size>
+                </box>
+            </geometry>
+            </visual>
+        </link>
+
+        <link name="leg_3">
+            <pose>0.35 -0.18 -0.18 0 0 0</pose>
+            <collision name="collision">
+            <geometry>
+                <box>
+                <size>0.04 0.04 0.36</size>
+                </box>
+            </geometry>
+            </collision>
+            <visual name="visual">
+            <geometry>
+                <box>
+                <size>0.04 0.04 0.36</size>
+                </box>
+            </geometry>
+            </visual>
+        </link>
+
+        <link name="leg_4">
+            <pose>-0.35 -0.18 -0.18 0 0 0</pose>
+            <collision name="collision">
+            <geometry>
+                <box>
+                <size>0.04 0.04 0.36</size>
+                </box>
+            </geometry>
+            </collision>
+            <visual name="visual">
+            <geometry>
+                <box>
+                <size>0.04 0.04 0.36</size>
+                </box>
+            </geometry>
+            </visual>
+        </link>
+    </model>
+
+    <!-- Human-back-like static target for massage interaction tests -->
+    <model name="human_back_target">
+        <static>true</static>
+        <!-- kept on top of the massage table, same yaw rotation -->
+        <pose>0.00 -0.40 0.37 0 0 0</pose>
+
+        <link name="back_surface">
+            <collision name="collision">
+            <geometry>
+                <box>
+                <size>0.55 0.32 0.08</size>
+                </box>
+            </geometry>
+            </collision>
+
+            <visual name="visual">
+            <geometry>
+                <ellipsoid>
+                <radii>0.32 0.20 0.06</radii>
+                </ellipsoid>
+            </geometry>
+            <material>
+                <ambient>0.75 0.55 0.46 1</ambient>
+                <diffuse>0.82 0.62 0.53 1</diffuse>
+            </material>
+            </visual>
+        </link>
+    </model>
+
+  </world>
+</sdf>

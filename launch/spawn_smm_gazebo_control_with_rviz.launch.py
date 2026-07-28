@@ -65,13 +65,27 @@ def generate_launch_description():
         "smm_gazebo_control.rviz",
     )
 
+    default_world = os.path.join(
+        smm_gazebo_sim_share,
+        "worlds",
+        "smm_empty_world.sdf",
+    )
+
+    default_controller_defaults_yaml = os.path.join(
+        get_package_share_directory("smm_controllers"),
+        "config",
+        "controller_defaults.yaml",
+    )
+
     controller_type_arg = DeclareLaunchArgument(
         "controller_type",
         default_value="joint_inverse_dynamics",
         description=(
             "Controller type: position, velocity, effort, joint_pd_effort, "
             "pd_gravity, joint_inverse_dynamics, cartesian_pd_gravity, "
-            "cartesian_pose_pd_gravity, cartesian_inv_dyn."
+            "cartesian_pose_pd_gravity, cartesian_inv_dyn, "
+            "cartesian_robust_inv_dyn, cartesian_robust_adaptive_inv_dyn, "
+            "cartesian_robust_impedance."
         ),
     )
 
@@ -105,12 +119,137 @@ def generate_launch_description():
         description="Start RViz marker node for Jacobian condition number visualization.",
     )
 
+    # Kinematic manipulability ellipsoid
+    start_ellipsoid_viz_arg = DeclareLaunchArgument(
+        "start_ellipsoid_viz",
+        default_value="true",
+        description="Start runtime manipulability ellipsoid visualization.",
+    )
+
+    ellipsoid_type_arg = DeclareLaunchArgument(
+        "ellipsoid_type",
+        default_value="kinematic",
+        description="Ellipsoid type to visualize. Default: kinematic.",
+    )
+
+    show_kinematic_trans_ellipsoid_arg = DeclareLaunchArgument(
+        "show_kinematic_trans_ellipsoid",
+        default_value="true",
+        description="Show translational kinematic manipulability ellipsoid.",
+    )
+
+    show_kinematic_rot_ellipsoid_arg = DeclareLaunchArgument(
+        "show_kinematic_rot_ellipsoid",
+        default_value="false",
+        description="Show rotational kinematic manipulability ellipsoid.",
+    )
+
+    ellipsoid_frame_id_arg = DeclareLaunchArgument(
+        "ellipsoid_frame_id",
+        default_value="base_plate",
+        description="Frame id for manipulability ellipsoid markers.",
+    )
+
+    # Parent ags
+    data_dir_arg = DeclareLaunchArgument(
+        "data_dir",
+        default_value="/home/nikos/ros2_ws/src/smm_class_pkgs/smm_data/synthesis/yaml",
+        description="Live generated synthesis YAML directory.",
+    )
+
+    xacro_path_arg = DeclareLaunchArgument(
+        "xacro_path",
+        default_value="urdf/6dof/smm_structure_anatomy_assembly_6dof.xacro",
+        description="SMM xacro path, relative to smm_synthesis share or absolute.",
+    )
+
+    run_synthesis_arg = DeclareLaunchArgument(
+        "run_synthesis",
+        default_value="true",
+        description="Run headless synthesis before spawning Gazebo/control.",
+    )
+
+    world_arg = DeclareLaunchArgument(
+        "world",
+        default_value=default_world,
+        description=(
+            "Gazebo Sim world SDF file. Default is the current empty world. "
+            "For interaction tests, pass world:=smm_interaction_massage_test.sdf."
+        ),
+    )
+
+    robot_name_arg = DeclareLaunchArgument(
+        "robot_name",
+        default_value="smm",
+        description="Gazebo entity name.",
+    )
+
+    controller_defaults_yaml_arg = DeclareLaunchArgument(
+        "controller_defaults_yaml",
+        default_value=default_controller_defaults_yaml,
+        description="YAML file containing default controller parameters.",
+    )
+
+    # Launch descriptions: Main Gazebo
     gazebo_control = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(gazebo_control_launch),
         launch_arguments={
             "controller_type": LaunchConfiguration("controller_type"),
             "start_rqt_plot": LaunchConfiguration("start_rqt_plot"),
+            "data_dir": LaunchConfiguration("data_dir"),
+            "xacro_path": LaunchConfiguration("xacro_path"),
+            "run_synthesis": LaunchConfiguration("run_synthesis"),
+            "world": LaunchConfiguration("world"),
+            "robot_name": LaunchConfiguration("robot_name"),
+            "controller_defaults_yaml": LaunchConfiguration("controller_defaults_yaml"),
         }.items(),
+    )
+
+    # Launch description for ellipsoids
+    ellipsoid_viz_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("smm_gazebo_sim"),
+                "launch",
+                "smm_runtime_ellipsoid_viz.launch.py"
+            )
+        ),
+        launch_arguments={
+            "start_ellipsoid_viz": LaunchConfiguration("start_ellipsoid_viz"),
+            "ellipsoid_type": LaunchConfiguration("ellipsoid_type"),
+
+            # Use the same live YAML directory already used by synthesis/control.
+            "yaml_base_dir": LaunchConfiguration("data_dir"),
+
+            # During Gazebo task execution, compute ellipsoids from real joint states.
+            "joint_states_topic": "/joint_states",
+
+            "frame_id": LaunchConfiguration("ellipsoid_frame_id"),
+            "use_sim_time": "true",
+
+            # Default desired ellipsoid: kinematic translational.
+            "show_kinematic_trans_ellipsoid": LaunchConfiguration(
+                "show_kinematic_trans_ellipsoid"
+            ),
+            "show_kinematic_rot_ellipsoid": LaunchConfiguration(
+                "show_kinematic_rot_ellipsoid"
+            ),
+
+            "kinematic_trans_msg_topic":
+                "/smm/kinematic_manipulability_ellipsoid_trans_ndof",
+            "kinematic_rot_msg_topic":
+                "/smm/kinematic_manipulability_ellipsoid_rot_ndof",
+
+            "kinematic_trans_marker_topic":
+                "/smm_viz/kinematic_manipulability_ellipsoid_trans_ndof",
+            "kinematic_trans_axes_topic":
+                "/smm_viz/kinematic_manipulability_ellipsoid_trans_axes_ndof",
+
+            "kinematic_rot_marker_topic":
+                "/smm_viz/kinematic_manipulability_ellipsoid_rot_ndof",
+            "kinematic_rot_axes_topic":
+                "/smm_viz/kinematic_manipulability_ellipsoid_rot_axes_ndof",
+        }.items()
     )
 
     rviz = Node(
@@ -180,9 +319,23 @@ def generate_launch_description():
             start_desired_tcp_marker_arg,
             start_jacobian_condition_marker_arg,
 
+            data_dir_arg,
+            xacro_path_arg,
+            run_synthesis_arg,
+            world_arg,
+            robot_name_arg,
+            controller_defaults_yaml_arg,
+
+            start_ellipsoid_viz_arg,
+            ellipsoid_type_arg,
+            show_kinematic_trans_ellipsoid_arg,
+            show_kinematic_rot_ellipsoid_arg,
+            ellipsoid_frame_id_arg,
+
             gazebo_control,
             rviz,
             desired_tcp_marker_node,
             jacobian_condition_marker_node,
+            ellipsoid_viz_launch,
         ]
     )

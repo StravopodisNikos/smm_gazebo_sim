@@ -8,7 +8,8 @@ from launch.actions import (
     RegisterEventHandler,
 )
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import LaunchConfiguration, Command
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
+from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
@@ -43,13 +44,42 @@ def launch_setup(context, *args, **kwargs):
     smm_synthesis_parent = os.path.dirname(smm_synthesis_share)
 
     run_synthesis = as_bool(LaunchConfiguration("run_synthesis").perform(context))
-    world = LaunchConfiguration("world").perform(context)
     xacro_path = LaunchConfiguration("xacro_path").perform(context)
     robot_name = LaunchConfiguration("robot_name").perform(context)
     controller_type = LaunchConfiguration("controller_type").perform(context)
     data_dir = LaunchConfiguration("data_dir").perform(context)
     start_rqt_plot = LaunchConfiguration("start_rqt_plot").perform(context).lower() == "true"
     controller_defaults_yaml = LaunchConfiguration("controller_defaults_yaml").perform(context)
+
+    # select world
+    world_arg = LaunchConfiguration("world").perform(context)
+
+    if not os.path.isabs(world_arg):
+        expanded_world = os.path.expanduser(world_arg)
+
+        if os.path.isabs(expanded_world):
+            world = expanded_world
+        else:
+            # Allow either:
+            #   world:=smm_empty_world.sdf
+            # or:
+            #   world:=worlds/smm_empty_world.sdf
+            candidate_1 = os.path.join(pkg_share, "worlds", expanded_world)
+            candidate_2 = os.path.join(pkg_share, expanded_world)
+
+            if os.path.exists(candidate_1):
+                world = candidate_1
+            else:
+                world = candidate_2
+    else:
+        world = os.path.expanduser(world_arg)
+
+    if not os.path.exists(world):
+        raise RuntimeError(
+            "[spawn_smm_gazebo_control] Gazebo world file not found:\n"
+            f"  requested: {world_arg}\n"
+            f"  resolved:  {world}"
+        )
 
     data_dir = os.path.expanduser(data_dir)
     controller_defaults_yaml = os.path.expanduser(controller_defaults_yaml)
@@ -112,6 +142,8 @@ def launch_setup(context, *args, **kwargs):
         "cartesian_pose_pd_gravity",
         "cartesian_inv_dyn",
         "cartesian_robust_inv_dyn",
+        "cartesian_robust_adaptive_inv_dyn",
+        "cartesian_robust_impedance",
     ]
 
     if controller_type not in valid_controller_types:
@@ -179,6 +211,8 @@ def launch_setup(context, *args, **kwargs):
     print("[spawn_smm_gazebo_control] Runtime controller selection:")
     print(f"  controller_type: {controller_type}")
     print(f"  controller_name: {selected_controller_name}")
+    print("[spawn_smm_gazebo_control] Gazebo world:")
+    print(f"  {world}")
 
     set_gz_resource_path = SetEnvironmentVariable(
         name="GZ_SIM_RESOURCE_PATH",
@@ -195,6 +229,10 @@ def launch_setup(context, *args, **kwargs):
         name="GZ_SIM_SYSTEM_PLUGIN_PATH",
         value=[
             "/opt/ros/kilted/lib",
+            ":",
+            "/opt/ros/kilted/opt/gz_sim_vendor/lib",
+            ":",
+            "/opt/ros/kilted/opt/gz_sim_vendor/lib/gz-sim-9/plugins",
         ],
     )
 
@@ -428,6 +466,15 @@ def generate_launch_description():
                     "controller_defaults.yaml",
                 ),
                 description="YAML file containing default parameters for SMM controllers.",
+            ),
+            DeclareLaunchArgument(
+                "world",
+                default_value=PathJoinSubstitution([
+                    FindPackageShare("smm_gazebo_sim"),
+                    "worlds",
+                    "smm_empty_apply_wrench.sdf",
+                ]),
+                description="Gazebo world SDF file to load.",
             ),
             OpaqueFunction(function=launch_setup),
         ]
